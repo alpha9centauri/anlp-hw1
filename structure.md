@@ -29,7 +29,7 @@ This is the Llama model that takes in input ids and returns next-token predictio
 1. an embedding layer that consists of token embeddings ```tok_embeddings```.
 2. llama encoder layer which is a stack of ```config.num_hidden_layers``` ```LlamaLayer```
 3. a projection layer for each hidden state which predicts token IDs (for next-word prediction)
-4. a "generate" function which uses temperature sampling with epsilon sampling to generate long continuation strings.
+4. a "generate" function which uses temperature sampling with top-p (nucleus) sampling to generate long continuation strings.
 The desired outputs are
 1. ```logits```: logits (output scores) over the vocabulary, predicting the next possible token at each point
 2. ```hidden_state```: the final hidden state at each token in the given document
