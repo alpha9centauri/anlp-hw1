@@ -67,15 +67,15 @@ You should see continuations of the sentence `I have wanted to see this thriller
 ```bash
 python run_llama.py --option prompt --batch_size 10 --train data/sst-train.txt --dev data/sst-dev.txt --test data/sst-test.txt --label-names data/sst-label-mapping.json --dev_out sst-dev-prompting-output.txt --test_out sst-test-prompting-output.txt [--use_gpu]
 ```
-- Dev Accuracy: 0.237 (0.000)
-- Test Accuracy: 0.250 (0.000)
+- Dev Accuracy: 0.197 (0.000)
+- Test Accuracy: 0.176 (0.000)
 
 **CFIMDB Dataset:**
 ```bash
 python run_llama.py --option prompt --batch_size 10 --train data/cfimdb-train.txt --dev data/cfimdb-dev.txt --test data/cfimdb-test.txt --label-names data/cfimdb-label-mapping.json --dev_out cfimdb-dev-prompting-output.txt --test_out cfimdb-test-prompting-output.txt [--use_gpu]
 ```
-- Dev Accuracy: 0.490 (0.000)
-- Test Accuracy: 0.109 (0.000)
+- Dev Accuracy: 0.514 (0.000)
+- Test Accuracy: 0.232 (0.000)
 
 ### Addition Llama
 Before running the following commands, ensure that your model capacity does not exceed 5,808,844,800,000 (see train command below).
