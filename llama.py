@@ -41,8 +41,10 @@ class LayerNorm(torch.nn.Module):
         Returns:
             torch.Tensor: The normalized tensor.
         """
-        # todo
-        raise NotImplementedError
+        mean = x.mean(dim = -1, keepdims = True)
+        var = ((x - mean) ** 2).mean(dim = -1, keepdims = True)
+        x_hat = (x - mean) / torch.sqrt(var + self.eps)
+        return x_hat
 
     def forward(self, x):
         """
@@ -106,7 +108,24 @@ class Attention(nn.Module):
         jointly using matrix/tensor operations.
         '''
         # todo
-        raise NotImplementedError
+        # (bs, n_heads, seqlen, seqlen)
+        attn_scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(self.head_dim)
+
+        # Causal mask: each token can only attend to itself and previous tokens
+        if self.causal:
+            seqlen = query.size(-2)
+            # causal_mask is (max_seq_len, max_seq_len); take needed slice
+            mask = self.causal_mask[:seqlen, :seqlen]  # (seqlen, seqlen), 1=keep, 0=mask
+            # Fill masked positions with -inf before softmax
+            attn_scores = attn_scores.masked_fill(mask == 0, float("-inf"))
+
+        # Softmax over key positions
+        attn_probs = F.softmax(attn_scores, dim=-1)
+        attn_probs = self.attn_dropout(attn_probs)
+
+        # Weighted sum of values -> (bs, n_heads, seqlen, head_dim)
+        output = torch.matmul(attn_probs, value)
+        return output
 
 
     def forward(
@@ -210,8 +229,13 @@ class LlamaLayer(nn.Module):
         5) add a residual connection from the unnormalized self-attention output to the
            output of the feed-forward network
         '''
-        # todo
-        raise NotImplementedError
+        # 1) norm + 2) attention + 3) residual
+        h = x + self.attention(self.attention_norm(x))
+
+        # 4) norm + 5) feed-forward + 6) residual
+        out = h + self.feed_forward(self.ffn_norm(h))
+
+        return out
 
 class Llama(LlamaPreTrainedModel):
     def __init__(self, config: LlamaConfig):
@@ -301,11 +325,33 @@ class Llama(LlamaPreTrainedModel):
                 6) Renormalize the remaining probabilities so they sum to 1.
                 7) Sample from this filtered probability distribution.
                 '''
-                # todo 
+                # 1) temperature scaling + softmax
+                scaled_logits = logits / temperature
+                probs = torch.softmax(scaled_logits, dim=-1)  # (b, vocab)
 
-                raise NotImplementedError
-                # map to original vocab indices
-                idx_next = None
+                # 2) sort descending
+                sorted_probs, sorted_idx = torch.sort(probs, dim=-1, descending=True)
+
+                # 3) cumulative probability
+                cum_probs = torch.cumsum(sorted_probs, dim=-1)
+
+                # 4) keep smallest set with cumulative prob >= top_p
+                # mask tokens where cumulative prob exceeds top_p
+                sorted_mask = cum_probs > top_p
+                # always keep at least the highest-prob token
+                sorted_mask[..., 0] = False
+
+                # 5) mask out tokens outside nucleus
+                sorted_probs = sorted_probs.masked_fill(sorted_mask, 0.0)
+
+                # 6) renormalize
+                sorted_probs = sorted_probs / sorted_probs.sum(dim=-1, keepdim=True).clamp_min(1e-12)
+
+                # 7) sample from filtered distribution
+                next_sorted_pos = torch.multinomial(sorted_probs, num_samples=1)  # (b, 1)
+
+                # map sampled sorted position back to original vocab index
+                idx_next = torch.gather(sorted_idx, dim=-1, index=next_sorted_pos)  # (b, 1)
             
             # append sampled index to the running sequence and continue
             idx = torch.cat((idx, idx_next), dim=1)

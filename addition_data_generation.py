@@ -14,11 +14,33 @@ def generate_addition_data(n):
     4) Repeat until n unique examples are collected
     5) Return the data formatted as strings of the form "a+b=c"
     """
-    # todo
-    # data = []
-    # ....
-    # return data
-    raise NotImplementedError
+    min_val, max_val = 1000, 9999
+    total_unique_pairs = (max_val - min_val + 1) * (max_val - min_val + 2) // 2  # combinations with replacement
+
+    if n < 0:
+        raise ValueError("n must be non-negative")
+    if n > total_unique_pairs:
+        raise ValueError(f"Requested n={n}, but max unique unordered pairs is {total_unique_pairs}")
+
+    seen_pairs = set()
+    data = []
+
+    while len(data) < n:
+        a = random.randint(min_val, max_val)
+        b = random.randint(min_val, max_val)
+
+        # canonical unordered representation so (a,b) == (b,a)
+        pair = (a, b) if a <= b else (b, a)
+
+        if pair in seen_pairs:
+            continue
+
+        seen_pairs.add(pair)
+        c = a + b
+        data.append(f"{a}+{b}={c}")
+
+    return data
+
 
 def generate_dataset(n, filename, save_dir="data"):
     data = generate_addition_data(n)

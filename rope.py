@@ -31,45 +31,55 @@ def apply_rotary_emb(
     theta: float = 10000.0,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
-    Apply rotary embeddings to input tensors using the given frequency tensor.
-
-    This function applies rotary embeddings to the given query and key tensors. The rotation to each token
-    embedding is a function of that token's position in the sequence, head_dim, and theta.
-    The input tensors are reshaped as complex numbers to simplify your implementation.
-
-    Args:
-        query (torch.Tensor): Query tensor to apply rotary embeddings.
-                              Shape: (batch_size, seqlen, n_local_heads, self.head_dim)
-        key (torch.Tensor): Key tensor to apply rotary embeddings.
-                              Shape: (batch_size, seqlen, n_local_kv_heads, self.head_dim)
-        head_dim (int): Dimension of each attention head.
-        max_seq_len (int): Maximum sequence length supported by model.
-    Returns:
-        Tuple[torch.Tensor, torch.Tensor]: Tuple of modified query tensor and key tensor with rotary embeddings.
+    Apply rotary embeddings to query/key.
+    query: (bs, seqlen, n_local_heads, head_dim)
+    key:   (bs, seqlen, n_local_kv_heads, head_dim)
     """
-
     _, seqlen, _, _ = query.shape
     device = query.device
-    # todo
-    #
-    # Please refer to Lecture 5 slides in https://cmu-l3.github.io/anlp-fall2025/static_files/anlp-f2025-05-transformers.pdf
-    # and Section 3 in https://arxiv.org/abs/2104.09864.
+
+    # RoPE requires pairing dimensions -> head_dim must be even
+    assert head_dim % 2 == 0, "head_dim must be even for RoPE"
+
+    # Build inverse frequencies for each 2D pair:
+    # inv_freq[i] = 1 / (theta^(2i/head_dim)), i=0..head_dim/2-1
+    inv_freq = 1.0 / (theta ** (torch.arange(0, head_dim, 2, device=device).float() / head_dim))  # (head_dim//2,)
+
+    # Positions for current sequence length
+    t = torch.arange(seqlen, device=device).float()  # (seqlen,)
+
+    # Angles: outer product -> (seqlen, head_dim//2)
+    freqs = torch.outer(t, inv_freq)
+
+    # cos/sin for rotation
+    cos = torch.cos(freqs)  # (seqlen, head_dim//2)
+    sin = torch.sin(freqs)  # (seqlen, head_dim//2)
+
+    # reshape for broadcasting to query/key shapes
+    cos_q = reshape_for_broadcast(cos, query.float().reshape(query.shape[:-1] + (-1, 2))[..., 0])
+    sin_q = reshape_for_broadcast(sin, query.float().reshape(query.shape[:-1] + (-1, 2))[..., 0])
+
+    cos_k = reshape_for_broadcast(cos, key.float().reshape(key.shape[:-1] + (-1, 2))[..., 0])
+    sin_k = reshape_for_broadcast(sin, key.float().reshape(key.shape[:-1] + (-1, 2))[..., 0])
 
     # reshape xq and xk to match the complex representation
     query_real, query_imag = query.float().reshape(query.shape[:-1] + (-1, 2)).unbind(-1)
     key_real, key_imag = key.float().reshape(key.shape[:-1] + (-1, 2)).unbind(-1)
-    # This separates each query/key vector into its odd and even indices (assuming *one-indexing*).
-    # query_real contains q_1, q_3, q_5, ... and query_imag contains q_2, q_4, q_6, ...
 
-    # First, compute the trigonometric values in the second and fourth columns in
-    # slide 49 (linked above).
+    # Complex rotation:
+    # (a + ib) * (cos + i sin) = (a cos - b sin) + i(a sin + b cos)
+    q_rot_real = query_real * cos_q - query_imag * sin_q
+    q_rot_imag = query_real * sin_q + query_imag * cos_q
 
-    # Then, combine these trigonometric values with the tensors query_real, query_imag,
-    # key_real, and key_imag.
+    k_rot_real = key_real * cos_k - key_imag * sin_k
+    k_rot_imag = key_real * sin_k + key_imag * cos_k
 
-    raise NotImplementedError
+    # stack back real/imag pairs and flatten to original last dim
+    query_out = torch.stack((q_rot_real, q_rot_imag), dim=-1).flatten(-2)
+    key_out = torch.stack((k_rot_real, k_rot_imag), dim=-1).flatten(-2)
 
-    query_out = None
-    key_out = None
-    # Return the rotary position embeddings for the query and key tensors
+    # cast back to original dtypes
+    query_out = query_out.type_as(query)
+    key_out = key_out.type_as(key)
+
     return query_out, key_out

@@ -63,15 +63,62 @@ def train_one_epoch(model, loader, optimizer, device):
     Another Hint: 
         token id for "=" is 12. 
     """
-    # # todo
-    # model.train()
-    # total_loss = 0
-    # n_batches = 0
-    # for ...
+    model.train()
+    total_loss = 0.0
+    n_batches = 0
 
-    # return total_loss / n_batches
+    eq_token_id = 12  # "="
 
-    raise NotImplementedError
+    for batch in loader:
+        # Supports either tuple/list batches or dict batches
+        if isinstance(batch, dict):
+            x = batch.get("input_ids", batch.get("x"))
+            y = batch.get("labels", batch.get("y"))
+        else:
+            x, y = batch
+
+        x = x.to(device)
+        y = y.to(device)
+
+        optimizer.zero_grad(set_to_none=True)
+
+        logits, _ = model(x)  # logits: (B, T, V)
+
+        B, T, V = logits.shape
+
+        # Build mask: only supervise tokens AFTER first '=' in each sequence
+        with torch.no_grad():
+            eq_pos = torch.full((B,), -1, device=y.device, dtype=torch.long)
+            for i in range(B):
+                pos = (x[i] == eq_token_id).nonzero(as_tuple=False)
+                if pos.numel() > 0:
+                    eq_pos[i] = pos[0, 0]
+
+            t_idx = torch.arange(T, device=y.device).unsqueeze(0).expand(B, T)  # (B,T)
+            answer_mask = t_idx > eq_pos.unsqueeze(1)  # False if '=' missing
+            valid_mask = answer_mask.reshape(-1)
+
+        # Flatten for CE
+        logits_flat = logits.reshape(-1, V)
+        y_flat = y.reshape(-1)
+
+        # If no valid answer positions in this batch, skip
+        if valid_mask.sum().item() == 0:
+            continue
+
+        loss = F.cross_entropy(logits_flat[valid_mask], y_flat[valid_mask])
+
+        loss.backward()
+        optimizer.step()
+
+        total_loss += loss.item()
+        n_batches += 1
+
+    return total_loss / max(n_batches, 1)
+
+
+
+
 
 
 @torch.no_grad()
@@ -95,15 +142,52 @@ def evaluate_loss(model, loader, device):
     Another Hint: 
         token id for "=" is 12. 
     """
-    # todo
-    # model.eval()
-    # total_loss = 0
-    # n_batches = 0
-    # for ...
+    model.eval()
+    total_loss = 0.0
+    n_batches = 0
 
-    # return total_loss / n_batches
+    eq_token_id = 12  # "="
 
-    raise NotImplementedError
+    for batch in loader:
+        # Supports both dict-style and tuple-style batches
+        if isinstance(batch, dict):
+            x = batch.get("input_ids", batch.get("x"))
+            y = batch.get("labels", batch.get("y"))
+        else:
+            x, y = batch
+
+        x = x.to(device)
+        y = y.to(device)
+
+        logits, _ = model(x)  # (B, T, V)
+        B, T, V = logits.shape
+
+        # Build mask to keep only answer tokens (strictly after first '=' in x)
+        eq_pos = torch.full((B,), -1, device=x.device, dtype=torch.long)
+        for i in range(B):
+            pos = (x[i] == eq_token_id).nonzero(as_tuple=False)
+            if pos.numel() > 0:
+                eq_pos[i] = pos[0, 0]
+
+        t_idx = torch.arange(T, device=x.device).unsqueeze(0).expand(B, T)  # (B, T)
+        answer_mask = t_idx > eq_pos.unsqueeze(1)  # False when '=' not found
+        valid_mask = answer_mask.reshape(-1)
+
+        # Flatten for CE
+        logits_flat = logits.reshape(-1, V)
+        y_flat = y.reshape(-1)
+
+        # Skip batches with no valid supervised positions
+        if valid_mask.sum().item() == 0:
+            continue
+
+        loss = F.cross_entropy(logits_flat[valid_mask], y_flat[valid_mask])
+
+        total_loss += loss.item()
+        n_batches += 1
+
+    return total_loss / max(n_batches, 1)
+
 
 
 
