@@ -69,7 +69,7 @@ def train_one_epoch(model, loader, optimizer, device):
 
     eq_token_id = 12  # "="
 
-    for batch in loader:
+    for batch in tqdm(loader, desc="train_batches", leave=False):
         # Supports either tuple/list batches or dict batches
         if isinstance(batch, dict):
             x = batch.get("input_ids", batch.get("x"))
@@ -148,7 +148,7 @@ def evaluate_loss(model, loader, device):
 
     eq_token_id = 12  # "="
 
-    for batch in loader:
+    for batch in tqdm(loader, desc="val_batches", leave=False):
         # Supports both dict-style and tuple-style batches
         if isinstance(batch, dict):
             x = batch.get("input_ids", batch.get("x"))
@@ -299,7 +299,7 @@ def model_training(args):
 
     best_val_loss = float('inf')
 
-    for epoch in range(1, training_config["n_epochs"] + 1):
+    for epoch in tqdm(range(1, training_config["n_epochs"] + 1), desc="epochs"):
         # Train the model for one epoch
         train_loss = train_one_epoch(model, train_loader, optimizer, device)
         
@@ -490,7 +490,7 @@ def test_model(
         )
 
     with torch.no_grad():
-        for batch in tqdm(test_dataloader):
+        for batch in tqdm(test_dataloader, desc="test_batches"):
             # batch[0] = input tokens
             x_prompts = batch[0]
 
